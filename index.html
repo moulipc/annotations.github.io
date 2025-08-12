@@ -1,0 +1,1542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Annotation Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 100;
+        }
+
+        .controls button {
+            padding: 10px 20px;
+            font-size: 18px;
+            font-weight: bold;
+            border: 2px solid #333;
+            background-color: white;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: all 0.2s;
+            min-width: 60px;
+        }
+
+        .controls button:hover {
+            background-color: #333;
+            color: white;
+        }
+
+        .controls button:active {
+            transform: scale(0.95);
+        }
+
+        .context-menu {
+            position: absolute;
+            background-color: white;
+            border: 2px solid #333;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 1000;
+            display: none;
+            min-width: 150px;
+        }
+
+        .menu-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+
+        .menu-item:last-child {
+            border-bottom: none;
+        }
+
+        .menu-item:hover {
+            background-color: #f0f0f0;
+        }
+
+        .menu-item.active {
+            background-color: #333;
+            color: white;
+        }
+
+        .pageContainer {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            align-items: center;
+        }
+
+        .page {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 20px;
+            min-height: 750px;
+            width: 100%;
+            max-width: 600px;
+            position: relative;
+        }
+
+        .page canvas {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>') 2 20, pointer;
+            max-width: 100%;
+            max-height: 100%;
+            transition: all 0.2s ease;
+        }
+
+        .zoom-info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .tooltip { display: none; }
+
+        /* Floating editor for creating/editing text annotations */
+        .text-editor {
+            position: absolute;
+            min-width: 120px;
+            min-height: 40px;
+            width: 220px;
+            height: 90px;
+            resize: both;
+            overflow: auto;
+            padding: 6px 8px;
+            border: 1px solid rgba(0,0,0,0.25);
+            border-radius: 4px;
+            background: transparent;
+            color: #064e96;
+            font: 20px "Brush Script MT", "Lucida Handwriting", "Segoe Print", "Comic Sans MS", cursive;
+            line-height: 1.3;
+            white-space: pre-wrap;
+            word-break: break-word;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            outline: none;
+            z-index: 350; /* Above tooltip */
+        }
+
+        .text-editor:focus {
+            border-color: rgba(0,0,0,0.45);
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body>
+    <!-- Control buttons -->
+    <div class="controls">
+        <button id="zoomIn">+</button>
+        <button id="zoomOut">-</button>
+        <button id="undoBtn">Undo</button>
+        <button id="redoBtn">Redo</button>
+        <button id="saveBtn">Save</button>
+        <button id="loadBtn">Load</button>
+        <button id="exportImagesBtn">Export Images</button>
+        <button id="exportPdfBtn">Export PDF</button>
+    </div>
+
+    <!-- Context menu for tool selection -->
+    <div id="contextMenu" class="context-menu">
+            <div class="menu-item" data-tool="tick">✓ Tick</div>
+            <div class="menu-item" data-tool="cross">✗ Cross</div>
+            <div class="menu-item" data-tool="circle">◯ Circle</div>
+            <div class="menu-item" data-tool="line">⎺ Line</div>
+        <div class="menu-item" data-tool="text">T Text</div>
+    </div>
+
+    
+
+    <!-- Scrollable page container -->
+    <div class="pageContainer" id="pageContainer">
+        <!-- Pages will be dynamically generated here -->
+    </div>
+
+    <script>
+        class DocumentAnnotationTool {
+            constructor(numberOfPages = 4) {
+                this.pages = [];
+                this.numberOfPages = numberOfPages;
+                this.currentZoom = 100; // Current zoom level as percentage
+                this.minZoom = 50;
+                this.maxZoom = 150;
+                this.zoomStep = 10;
+                this.pendingAnnotation = null; // Stores click position for context menu
+                this.selectedTool = null; // Currently selected tool for drawing
+                this.isDrawing = false;
+                this.startPoint = null;
+                this.hoveredAnnotation = null; // Tracks which annotation is being hovered
+                this.activeTextEditor = null; // { pageIndex, element, x, y, width, height, editingIndex|null }
+                this.dragState = null; // { pageIndex, index, action: 'move'|'resize', handle?: string, offsetX, offsetY }
+                this.suppressClickOnce = false; // prevent click actions right after a drag
+                this.defaultCursor = "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z\"/><path d=\"m15 5 4 4\"/></svg>') 2 20, pointer";
+                this.crosshairCursor = 'crosshair';
+                this.selectedAnnotationIndex = null;
+                this.history = [];
+                this.future = [];
+                
+                // Canvas dimensions (portrait orientation)
+                this.baseCanvasWidth = 500;
+                this.baseCanvasHeight = 700;
+                
+                this.init();
+                // Initial snapshot for undo baseline
+                this.pushHistory();
+            }
+
+            init() {
+                this.createPages(this.numberOfPages);
+                this.setupEventListeners();
+            }
+
+            // Method to dynamically change the number of pages
+            setNumberOfPages(count) {
+                if (count !== this.numberOfPages) {
+                    this.numberOfPages = count;
+                    this.clearAllPages();
+                    this.createPages(count);
+                }
+            }
+
+            clearAllPages() {
+                const container = document.getElementById('pageContainer');
+                container.innerHTML = '';
+                this.pages = [];
+            }
+
+            createPages(count) {
+                const container = document.getElementById('pageContainer');
+                
+                for (let i = 0; i < count; i++) {
+                    const pageDiv = document.createElement('div');
+                    pageDiv.className = 'page';
+                    pageDiv.innerHTML = `
+                        <canvas id="canvas-${i}" width="${this.baseCanvasWidth}" height="${this.baseCanvasHeight}"></canvas>
+                        <div class="zoom-info">${this.currentZoom}%</div>
+                    `;
+                    
+                    container.appendChild(pageDiv);
+                    
+                    const canvas = pageDiv.querySelector('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Store page data
+                    this.pages.push({
+                        id: i,
+                        canvas: canvas,
+                        ctx: ctx,
+                        marks: [], // Array to store tick and cross marks
+                        backgroundImage: null
+                    });
+                    
+                    this.setupCanvas(i);
+                }
+            }
+
+            setupCanvas(pageIndex) {
+                const page = this.pages[pageIndex];
+                const canvas = page.canvas;
+                
+                // Create placeholder handwritten text background
+                this.createHandwrittenBackground(page);
+                
+                // Add event listeners for context menu and drawing
+                canvas.addEventListener('click', (e) => this.handleCanvasClick(e, pageIndex));
+                canvas.addEventListener('contextmenu', (e) => this.handleCanvasRightClick(e, pageIndex));
+                canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e, pageIndex));
+                canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e, pageIndex));
+                canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e, pageIndex));
+                canvas.addEventListener('mouseleave', (e) => this.handleMouseLeave(e, pageIndex));
+                canvas.addEventListener('dblclick', (e) => this.handleCanvasDoubleClick(e, pageIndex));
+                
+                // Add mouse wheel zoom
+                canvas.addEventListener('wheel', (e) => this.handleCanvasWheel(e, pageIndex));
+            }
+
+            createHandwrittenBackground(page) {
+                const ctx = page.ctx;
+                const canvas = page.canvas;
+                
+                // Create a light background
+                ctx.fillStyle = '#fefefe';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Add some handwritten-like text lines as placeholder
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                // Simulate handwritten lines
+                const lines = [
+                    'Sample handwritten document text',
+                    'This is a placeholder for actual',
+                    'handwritten content that would',
+                    'appear in a real document.',
+                    '',
+                    'Users can annotate this document',
+                    'by clicking to add tick marks',
+                    'or right-clicking for cross marks.',
+                    '',
+                    'The annotations will scale with',
+                    'the canvas when zoomed in or out.',
+                    '',
+                    'Hover over annotations to see a',
+                    'highlight, and click to remove.'
+                ];
+                
+                ctx.fillStyle = '#444';
+                ctx.font = '16px "Courier New", monospace';
+                
+                lines.forEach((line, index) => {
+                    if (line) {
+                        // Add slight randomness to simulate handwriting
+                        const x = 50 + Math.random() * 10 - 5;
+                        const y = 80 + index * 30 + Math.random() * 6 - 3;
+                        ctx.fillText(line, x, y);
+                    }
+                });
+                
+                // Add some decorative elements
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 1;
+                
+                // Draw margin line
+                ctx.beginPath();
+                ctx.moveTo(80, 0);
+                ctx.lineTo(80, canvas.height);
+                ctx.stroke();
+                
+                // Store the background as image data
+                page.backgroundImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            }
+
+            handleCanvasClick(e, pageIndex) {
+                if (this.suppressClickOnce) {
+                    this.suppressClickOnce = false;
+                    return;
+                }
+                // If an editor is open, let it handle the interaction
+                if (this.activeTextEditor && this.activeTextEditor.pageIndex === pageIndex) {
+                    return;
+                }
+                // Single click selects annotation to show handles
+                const rect = e.target.getBoundingClientRect();
+                const x = (e.clientX - rect.left) * (e.target.width / rect.width);
+                const y = (e.clientY - rect.top) * (e.target.height / rect.height);
+                const idx = this.findAnnotationAtPosition(pageIndex, x, y, { includeHandles: true });
+                this.selectedAnnotationIndex = idx;
+                this.redrawCanvas(pageIndex);
+                // If none selected and not drawing, open context menu
+                if (idx === null && !this.selectedTool) {
+                    e.preventDefault();
+                    this.showContextMenu(e, pageIndex);
+                }
+            }
+
+            handleCanvasRightClick(e, pageIndex) {
+                e.preventDefault();
+                // Right click also shows context menu
+                this.showContextMenu(e, pageIndex);
+            }
+
+            showContextMenu(e, pageIndex) {
+                const contextMenu = document.getElementById('contextMenu');
+                const rect = e.target.getBoundingClientRect();
+                
+                // Store click position and page for later use
+                this.pendingAnnotation = {
+                    pageIndex: pageIndex,
+                    x: (e.clientX - rect.left) * (e.target.width / rect.width),
+                    y: (e.clientY - rect.top) * (e.target.height / rect.height),
+                    clientX: e.clientX,
+                    clientY: e.clientY
+                };
+                
+                // Position context menu at click point
+                contextMenu.style.left = e.clientX + 'px';
+                contextMenu.style.top = e.clientY + 'px';
+                contextMenu.style.display = 'block';
+                
+                // Hide menu when clicking elsewhere
+                setTimeout(() => {
+                    document.addEventListener('click', this.hideContextMenu.bind(this), { once: true });
+                }, 0);
+            }
+
+            hideContextMenu() {
+                document.getElementById('contextMenu').style.display = 'none';
+            }
+
+            handleMouseDown(e, pageIndex) {
+                const rect = e.target.getBoundingClientRect();
+                const mouseX = (e.clientX - rect.left) * (e.target.width / rect.width);
+                const mouseY = (e.clientY - rect.top) * (e.target.height / rect.height);
+
+                if (this.selectedTool === 'circle' || this.selectedTool === 'underline') {
+                    e.preventDefault();
+                    this.isDrawing = true;
+                    this.startPoint = {
+                        x: mouseX,
+                        y: mouseY
+                    };
+                    this.currentPageIndex = pageIndex;
+                    return;
+                }
+
+                // Move/resize existing annotations, or start text edit via handle
+                const idx = this.findAnnotationAtPosition(pageIndex, mouseX, mouseY, { includeHandles: true });
+                if (idx !== null) {
+                    e.preventDefault();
+                    const mark = this.pages[pageIndex].marks[idx];
+                    // If text and clicking on edit handle, open editor
+                    if (mark.type === 'text' && this.isPointOnTextEditHandle(mark, mouseX, mouseY)) {
+                        this.openTextEditor({
+                            pageIndex,
+                            x: mark.x,
+                            y: mark.y,
+                            width: mark.width,
+                            height: mark.height,
+                            editingIndex: idx,
+                            initialText: mark.text || ''
+                        });
+                        return;
+                    }
+                    const handle = this.getResizeHandleForMark(mark, mouseX, mouseY);
+                    if (handle) {
+                        this.dragState = { pageIndex, index: idx, action: 'resize', handle };
+                        this.setCanvasCursor(pageIndex, this.cursorForHandle(handle, mark.type));
+                    } else {
+                        // move action
+                        let offsetX = 0, offsetY = 0;
+                        if (mark.type === 'tick' || mark.type === 'cross' || mark.type === 'text') {
+                            offsetX = mouseX - (mark.x);
+                            offsetY = mouseY - (mark.y);
+                        } else if (mark.type === 'circle' || mark.type === 'underline') {
+                            // For shapes, move by delta applied to defining points
+                            offsetX = mouseX;
+                            offsetY = mouseY;
+                        }
+                        this.dragState = { pageIndex, index: idx, action: 'move', offsetX, offsetY };
+                        this.setCanvasCursor(pageIndex, 'move');
+                    }
+                }
+            }
+
+            isPointOnTextEditHandle(mark, x, y) {
+                const rectX = mark.x;
+                const rectY = mark.y;
+                const rectW = Math.max(mark.width || 200, 40);
+                const rectH = Math.max(mark.height || 40, 30);
+                const size = 16;
+                const hx = rectX + rectW - size - 4 + size/2;
+                const hy = rectY + 4 + size/2;
+                return Math.abs(x - hx) <= size/2 && Math.abs(y - hy) <= size/2;
+            }
+
+            handleMouseMove(e, pageIndex) {
+                const rect = e.target.getBoundingClientRect();
+                const mouseX = (e.clientX - rect.left) * (e.target.width / rect.width);
+                const mouseY = (e.clientY - rect.top) * (e.target.height / rect.height);
+                
+                // If editor is open, skip hover logic
+                if (this.activeTextEditor) {
+                    return;
+                }
+
+                // If selecting a drawing tool, show crosshair
+                if (this.selectedTool === 'circle' || this.selectedTool === 'underline') {
+                    this.setCanvasCursor(pageIndex, this.crosshairCursor);
+                }
+
+                // Dragging move/resize
+                if (this.dragState && this.dragState.pageIndex === pageIndex) {
+                    e.preventDefault();
+                    const ds = this.dragState;
+                    const page = this.pages[pageIndex];
+                    const mark = page.marks[ds.index];
+                    if (ds.action === 'move') {
+                        this.setCanvasCursor(pageIndex, 'move');
+                        if (mark.type === 'tick' || mark.type === 'cross') {
+                            mark.x = mouseX - ds.offsetX;
+                            mark.y = mouseY - ds.offsetY;
+                        } else if (mark.type === 'text') {
+                            mark.x = mouseX - ds.offsetX;
+                            mark.y = mouseY - ds.offsetY;
+                        } else if (mark.type === 'circle') {
+                            const dx = mouseX - ds.offsetX;
+                            const dy = mouseY - ds.offsetY;
+                            // Update offset reference to current position for smooth dragging
+                            mark.startX += dx;
+                            mark.endX += dx;
+                            mark.startY += dy;
+                            mark.endY += dy;
+                            ds.offsetX = mouseX;
+                            ds.offsetY = mouseY;
+                        } else if (mark.type === 'underline') {
+                            const dx = mouseX - ds.offsetX;
+                            const dy = mouseY - ds.offsetY;
+                            mark.startX += dx;
+                            mark.endX += dx;
+                            mark.startY += dy;
+                            mark.endY += dy;
+                            ds.offsetX = mouseX;
+                            ds.offsetY = mouseY;
+                        }
+                        this.redrawCanvas(pageIndex);
+                    } else if (ds.action === 'resize') {
+                        this.setCanvasCursor(pageIndex, this.cursorForHandle(ds.handle, mark.type));
+                        this.resizeMarkWithHandle(mark, ds.handle, mouseX, mouseY);
+                        this.redrawCanvas(pageIndex);
+                    }
+                    return;
+                }
+
+                // Check if we're hovering over any annotation or its resize handles
+                const hoveredIndex = this.findAnnotationAtPosition(pageIndex, mouseX, mouseY, { includeHandles: true });
+                
+                if (hoveredIndex !== this.hoveredAnnotation) {
+                    // Update the hovered annotation
+                    this.hoveredAnnotation = hoveredIndex;
+                    this.redrawCanvas(pageIndex);
+                    // Cursor hints for move/resize
+                    if (hoveredIndex !== null) {
+                        const mark = this.pages[pageIndex].marks[hoveredIndex];
+                        const handle = this.getResizeHandleForMark(mark, mouseX, mouseY);
+                        if (handle) {
+                            this.setCanvasCursor(pageIndex, this.cursorForHandle(handle, mark.type));
+                        } else {
+                            this.setCanvasCursor(pageIndex, 'move');
+                        }
+                    } else if (!this.selectedTool || (this.selectedTool !== 'circle' && this.selectedTool !== 'underline')) {
+                        this.setCanvasCursor(pageIndex, this.defaultCursor);
+                    }
+                } else if (hoveredIndex !== null) {
+                    // Keep cursor updated while hovering same element
+                    const mark = this.pages[pageIndex].marks[hoveredIndex];
+                    const handle = this.getResizeHandleForMark(mark, mouseX, mouseY);
+                    if (handle) {
+                        this.setCanvasCursor(pageIndex, this.cursorForHandle(handle, mark.type));
+                    } else {
+                        this.setCanvasCursor(pageIndex, 'move');
+                    }
+                }
+                
+                // Handle drawing if we're in drawing mode
+                if (this.isDrawing && (this.selectedTool === 'circle' || this.selectedTool === 'underline')) {
+                    e.preventDefault();
+                    const currentPoint = {
+                        x: mouseX,
+                        y: mouseY
+                    };
+                    
+                    // Draw rubberband preview
+                    this.drawRubberbandPreview(pageIndex, this.startPoint, currentPoint);
+                }
+            }
+
+            handleMouseLeave(e, pageIndex) {
+                // Clear hovered annotation state
+                if (this.hoveredAnnotation !== null) {
+                    this.hoveredAnnotation = null;
+                    this.redrawCanvas(pageIndex);
+                }
+                
+                // If we're drawing, end drawing mode
+                if (this.isDrawing) {
+                    this.isDrawing = false;
+                    this.startPoint = null;
+                }
+
+                // If dragging, end drag
+                if (this.dragState) {
+                    this.dragState = null;
+                    this.suppressClickOnce = true;
+                    // After drag, restore cursor: crosshair if drawing tool active, otherwise pencil
+                    if (this.selectedTool === 'circle' || this.selectedTool === 'underline') {
+                        this.setCanvasCursor(pageIndex, this.crosshairCursor);
+                    } else {
+                        this.setCanvasCursor(pageIndex, this.defaultCursor);
+                    }
+                }
+            }
+
+            setCanvasCursor(pageIndex, cursor) {
+                const canvas = this.pages[pageIndex].canvas;
+                canvas.style.cursor = cursor;
+            }
+
+            cursorForHandle(handle, type) {
+                if (type === 'underline') {
+                    return 'grab';
+                }
+                if (handle === 'nw' || handle === 'se') return 'nwse-resize';
+                if (handle === 'ne' || handle === 'sw') return 'nesw-resize';
+                return 'move';
+            }
+
+            findAnnotationAtPosition(pageIndex, x, y, options = {}) {
+                const page = this.pages[pageIndex];
+                const marks = page.marks;
+                
+                // Search in reverse order (last added annotation first)
+                // to make sure we find the topmost annotation
+                for (let i = marks.length - 1; i >= 0; i--) {
+                    const mark = marks[i];
+                    
+                    if (mark.type === 'tick' || mark.type === 'cross') {
+                        const size = mark.size;
+                        const halfSize = size / 2;
+                        
+                        // Check if point is within annotation area
+                        if (Math.abs(x - mark.x) <= halfSize && Math.abs(y - mark.y) <= halfSize) {
+                            return i;
+                        }
+                    } else if (mark.type === 'text') {
+                        const withinX = x >= mark.x && x <= (mark.x + mark.width);
+                        const withinY = y >= mark.y && y <= (mark.y + mark.height);
+                        if (withinX && withinY) {
+                            return i;
+                        }
+                    } else if (mark.type === 'circle') {
+                        // Include rectangular bounds and handles for easier targeting
+                        const left = Math.min(mark.startX, mark.endX);
+                        const top = Math.min(mark.startY, mark.endY);
+                        const w = Math.abs(mark.endX - mark.startX);
+                        const h = Math.abs(mark.endY - mark.startY);
+                        const withinBox = x >= left && x <= left + w && y >= top && y <= top + h;
+                        if (withinBox) return i;
+                        if (options.includeHandles) {
+                            const handle = this.getResizeHandleForMark(mark, x, y);
+                            if (handle) return i;
+                        }
+                    } else if (mark.type === 'underline') {
+                        // Calculate distance from point to line segment
+                        const distance = this.distToSegment(
+                            {x: x, y: y},
+                            {x: mark.startX, y: mark.startY},
+                            {x: mark.endX, y: mark.endY}
+                        );
+                        
+                        if (distance < 10) { // 10px tolerance
+                            return i;
+                        }
+                        if (options.includeHandles) {
+                            const handle = this.getResizeHandleForMark(mark, x, y);
+                            if (handle) return i;
+                        }
+                    }
+                }
+                
+                return null;
+            }
+
+            // Helper function to calculate distance from point to line segment
+            distToSegment(p, v, w) {
+                const l2 = this.distSquared(v, w);
+                if (l2 === 0) return this.dist(p, v);
+                let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+                t = Math.max(0, Math.min(1, t));
+                return this.dist(p, { 
+                    x: v.x + t * (w.x - v.x),
+                    y: v.y + t * (w.y - v.y)
+                });
+            }
+
+            dist(v, w) {
+                return Math.sqrt(this.distSquared(v, w));
+            }
+
+            distSquared(v, w) {
+                return Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2);
+            }
+
+            removeAnnotation(pageIndex, annotationIndex) {
+                const page = this.pages[pageIndex];
+                
+                // Remove the annotation
+                this.pushHistory();
+                page.marks.splice(annotationIndex, 1);
+                
+                // Reset hover state
+                this.hoveredAnnotation = null;
+                
+                // Redraw canvas
+                this.redrawCanvas(pageIndex);
+            }
+
+            // History management for undo/redo
+            pushHistory() {
+                const snapshot = this.pages.map(p => ({
+                    marks: p.marks.map(m => ({ ...m }))
+                }));
+                this.history.push(snapshot);
+                this.future = [];
+            }
+
+            undo() {
+                if (this.history.length === 0) return;
+                const current = this.pages.map(p => ({ marks: p.marks.map(m => ({ ...m })) }));
+                this.future.push(current);
+                const prev = this.history.pop();
+                this.pages.forEach((page, i) => {
+                    page.marks = prev[i] ? prev[i].marks.map(m => ({ ...m })) : [];
+                    this.redrawCanvas(i);
+                });
+            }
+
+            redo() {
+                if (this.future.length === 0) return;
+                const current = this.pages.map(p => ({ marks: p.marks.map(m => ({ ...m })) }));
+                this.history.push(current);
+                const next = this.future.pop();
+                this.pages.forEach((page, i) => {
+                    page.marks = next[i] ? next[i].marks.map(m => ({ ...m })) : [];
+                    this.redrawCanvas(i);
+                });
+            }
+
+            drawRubberbandPreview(pageIndex, startPoint, currentPoint) {
+                const page = this.pages[pageIndex];
+                const ctx = page.ctx;
+                const canvas = page.canvas;
+                
+                // Clear canvas and restore background
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (page.backgroundImage) {
+                    ctx.putImageData(page.backgroundImage, 0, 0);
+                }
+                
+                // Redraw all existing marks
+                page.marks.forEach((mark, index) => {
+                    this.drawMark(ctx, mark, index === this.hoveredAnnotation);
+                });
+                
+                // Draw preview shape
+                ctx.strokeStyle = this.selectedTool === 'circle' ? 'rgba(204, 0, 0, 0.7)' : 'rgba(255, 102, 0, 0.7)';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]); // Dashed line for preview
+                
+                if (this.selectedTool === 'circle') {
+                    const centerX = (startPoint.x + currentPoint.x) / 2;
+                    const centerY = (startPoint.y + currentPoint.y) / 2;
+                    const radiusX = Math.abs(currentPoint.x - startPoint.x) / 2;
+                    const radiusY = Math.abs(currentPoint.y - startPoint.y) / 2;
+                    
+                    ctx.beginPath();
+                    ctx.ellipse(centerX, centerY, Math.max(radiusX, 5), Math.max(radiusY, 5), 0, 0, 2 * Math.PI);
+                    ctx.stroke();
+                } else if (this.selectedTool === 'underline') {
+                    ctx.beginPath();
+                    ctx.moveTo(startPoint.x, startPoint.y);
+                    ctx.lineTo(currentPoint.x, currentPoint.y);
+                    ctx.stroke();
+                }
+                
+                ctx.setLineDash([]); // Reset to solid line
+            }
+
+            handleMouseUp(e, pageIndex) {
+                if (this.isDrawing && (this.selectedTool === 'circle' || this.selectedTool === 'underline')) {
+                    e.preventDefault();
+                    const rect = e.target.getBoundingClientRect();
+                    const endPoint = {
+                        x: (e.clientX - rect.left) * (e.target.width / rect.width),
+                        y: (e.clientY - rect.top) * (e.target.height / rect.height)
+                    };
+                    
+                    this.addShapeMark(this.currentPageIndex, this.startPoint, endPoint, this.selectedTool);
+                    this.isDrawing = false;
+                    this.startPoint = null;
+                    this.selectedTool = null; // Reset tool after use
+                    
+                    // Reset cursor to default
+                    const canvases = document.querySelectorAll('.page canvas');
+                    canvases.forEach(canvas => {
+                        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>\') 2 20, pointer';
+                    });
+                    return;
+                }
+
+                if (this.dragState) {
+                    this.dragState = null;
+                    this.suppressClickOnce = true;
+                    // Reset cursor appropriately after drag end
+                    if (this.selectedTool === 'circle' || this.selectedTool === 'underline') {
+                        this.setCanvasCursor(pageIndex, this.crosshairCursor);
+                    } else {
+                        this.setCanvasCursor(pageIndex, this.defaultCursor);
+                    }
+                }
+            }
+
+            handleCanvasWheel(e, pageIndex) {
+                e.preventDefault();
+                
+                const delta = e.deltaY > 0 ? -this.zoomStep : this.zoomStep;
+                const newZoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.currentZoom + delta));
+                
+                if (newZoom !== this.currentZoom) {
+                    this.currentZoom = newZoom;
+                    this.updateCanvasSize();
+                }
+            }
+
+            addMark(pageIndex, x, y, type, extra = {}) {
+                const page = this.pages[pageIndex];
+                
+                // Store the mark with original coordinates (independent of zoom)
+                const mark = {
+                    x: x,
+                    y: y,
+                    type: type,
+                    size: 32, // 32x32 pixels as specified
+                    ...extra
+                };
+                
+                this.pushHistory();
+                page.marks.push(mark);
+                this.redrawCanvas(pageIndex);
+            }
+
+            addShapeMark(pageIndex, startPoint, endPoint, type) {
+                const page = this.pages[pageIndex];
+                
+                const mark = {
+                    startX: startPoint.x,
+                    startY: startPoint.y,
+                    endX: endPoint.x,
+                    endY: endPoint.y,
+                    type: type,
+                    size: 32
+                };
+                
+                this.pushHistory();
+                page.marks.push(mark);
+                this.redrawCanvas(pageIndex);
+            }
+
+            redrawCanvas(pageIndex) {
+                const page = this.pages[pageIndex];
+                const ctx = page.ctx;
+                const canvas = page.canvas;
+                
+                // Clear canvas and restore background
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (page.backgroundImage) {
+                    ctx.putImageData(page.backgroundImage, 0, 0);
+                }
+                
+                // Draw all marks
+                page.marks.forEach((mark, index) => {
+                    const isHovered = index === this.hoveredAnnotation || index === this.selectedAnnotationIndex;
+                    this.drawMark(ctx, mark, isHovered);
+                });
+            }
+
+            // Method to draw rectangular hover outline around annotations
+            drawHoverOutline(ctx, x, y, width, height) {
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([5, 5]);
+                ctx.strokeRect(x - 3, y - 3, width + 6, height + 6);
+                ctx.setLineDash([]);
+                ctx.lineWidth = 5;
+            }
+
+            drawMark(ctx, mark, isHovered = false) {
+                const size = mark.size;
+                const halfSize = size / 2;
+                
+                ctx.lineWidth = 5;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                if (mark.type === 'tick') {
+                    // Draw stylish green tick mark with shadow effect
+                    ctx.strokeStyle = '#008800';
+                    ctx.shadowColor = 'rgba(0, 136, 0, 0.3)';
+                    ctx.shadowBlur = 3;
+                    ctx.shadowOffsetX = 1;
+                    ctx.shadowOffsetY = 1;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(mark.x - halfSize * 0.6, mark.y);
+                    ctx.lineTo(mark.x - halfSize * 0.2, mark.y + halfSize * 0.6);
+                    ctx.lineTo(mark.x + halfSize * 0.8, mark.y - halfSize * 0.6);
+                    ctx.stroke();
+                    
+                    this.resetShadow(ctx);
+                    
+                    // Draw hover outline if hovered
+                    if (isHovered) {
+                        this.drawHoverOutline(ctx, mark.x - halfSize, mark.y - halfSize, size, size);
+                    }
+                } else if (mark.type === 'cross') {
+                    // Draw stylish red cross mark with shadow effect - same size as tick
+                    ctx.strokeStyle = '#cc0000';
+                    ctx.shadowColor = 'rgba(204, 0, 0, 0.3)';
+                    ctx.shadowBlur = 3;
+                    ctx.shadowOffsetX = 1;
+                    ctx.shadowOffsetY = 1;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(mark.x - halfSize * 0.8, mark.y - halfSize * 0.8);
+                    ctx.lineTo(mark.x + halfSize * 0.8, mark.y + halfSize * 0.8);
+                    ctx.moveTo(mark.x + halfSize * 0.8, mark.y - halfSize * 0.8);
+                    ctx.lineTo(mark.x - halfSize * 0.8, mark.y + halfSize * 0.8);
+                    ctx.stroke();
+                    
+                    this.resetShadow(ctx);
+                    
+                    // Draw hover outline if hovered
+                    if (isHovered) {
+                        this.drawHoverOutline(ctx, mark.x - halfSize, mark.y - halfSize, size, size);
+                    }
+                } else if (mark.type === 'circle') {
+                    // Draw oval annotation in red
+                    ctx.strokeStyle = '#cc0000';
+                    ctx.shadowColor = 'rgba(204, 0, 0, 0.3)';
+                    ctx.shadowBlur = 3;
+                    ctx.shadowOffsetX = 1;
+                    ctx.shadowOffsetY = 1;
+                    
+                    const centerX = (mark.startX + mark.endX) / 2;
+                    const centerY = (mark.startY + mark.endY) / 2;
+                    const radiusX = Math.abs(mark.endX - mark.startX) / 2;
+                    const radiusY = Math.abs(mark.endY - mark.startY) / 2;
+                    
+                    ctx.beginPath();
+                    ctx.ellipse(centerX, centerY, Math.max(radiusX, 15), Math.max(radiusY, 10), 0, 0, 2 * Math.PI);
+                    ctx.stroke();
+                    
+                    this.resetShadow(ctx);
+                    
+                    // Draw hover outline if hovered (rectangular box)
+                    if (isHovered) {
+                        const left = Math.min(mark.startX, mark.endX);
+                        const top = Math.min(mark.startY, mark.endY);
+                        const w = Math.abs(mark.endX - mark.startX);
+                        const h = Math.abs(mark.endY - mark.startY);
+                        this.drawHoverOutline(ctx, left, top, w, h);
+                        this.drawResizeHandles(ctx, mark);
+                    }
+                } else if (mark.type === 'underline') {
+                    // Draw underline annotation
+                    ctx.strokeStyle = '#ff6600';
+                    ctx.shadowColor = 'rgba(255, 102, 0, 0.3)';
+                    ctx.shadowBlur = 3;
+                    ctx.shadowOffsetX = 1;
+                    ctx.shadowOffsetY = 1;
+                    ctx.lineWidth = 4;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(mark.startX, mark.startY);
+                    ctx.lineTo(mark.endX, mark.endY);
+                    ctx.stroke();
+                    
+                    this.resetShadow(ctx);
+                    ctx.lineWidth = 5; // Reset line width
+                    
+                    // Draw hover outline if hovered (rectangular box)
+                    if (isHovered) {
+                        const left = Math.min(mark.startX, mark.endX);
+                        const top = Math.min(mark.startY, mark.endY);
+                        const w = Math.abs(mark.endX - mark.startX);
+                        const h = Math.max(4, Math.abs(mark.endY - mark.startY));
+                        this.drawHoverOutline(ctx, left, top, w, h);
+                        this.drawResizeHandles(ctx, mark);
+                    }
+                } else if (mark.type === 'text') {
+                    // Draw multi-line wrapped text within a resizable rectangle (transparent)
+                    const padding = 6;
+                    const rectX = mark.x;
+                    const rectY = mark.y;
+                    const rectW = Math.max(mark.width || 200, 40);
+                    const rectH = Math.max(mark.height || 40, 30);
+
+                    ctx.font = '20px "Brush Script MT", "Lucida Handwriting", "Segoe Print", "Comic Sans MS", cursive';
+
+                    // Clip to the rectangle area
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(rectX, rectY, rectW, rectH);
+                    ctx.clip();
+                    
+                    ctx.fillStyle = '#0066cc';
+                    ctx.textBaseline = 'top';
+                    const lineHeight = 24;
+                    const lines = this.wrapTextLines(ctx, mark.text, rectW - padding * 2);
+                    let drawY = rectY + padding;
+                    for (let i = 0; i < lines.length; i++) {
+                        if (drawY + lineHeight > rectY + rectH - padding) break;
+                        ctx.fillText(lines[i], rectX + padding, drawY);
+                        drawY += lineHeight;
+                    }
+
+                    ctx.restore();
+                    this.resetShadow(ctx);
+                    
+                    if (isHovered) {
+                        this.drawHoverOutline(ctx, rectX, rectY, rectW, rectH);
+                        this.drawResizeHandles(ctx, mark);
+                        this.drawTextEditHandle(ctx, rectX, rectY, rectW, rectH);
+                    }
+                }
+            }
+
+            drawTextEditHandle(ctx, rectX, rectY, rectW, rectH) {
+                const size = 16;
+                const x = rectX + rectW - size - 4;
+                const y = rectY + 4;
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.rect(x, y, size, size);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = '#333';
+                ctx.font = '12px Arial, sans-serif';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('✎', x + 3, y + size / 2 + 0.5);
+                ctx.restore();
+            }
+
+            drawResizeHandles(ctx, mark) {
+                const handleSize = 8;
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+                ctx.lineWidth = 1;
+                if (mark.type === 'circle' || mark.type === 'text') {
+                    const left = mark.type === 'circle' ? Math.min(mark.startX, mark.endX) : mark.x;
+                    const top = mark.type === 'circle' ? Math.min(mark.startY, mark.endY) : mark.y;
+                    const w = mark.type === 'circle' ? Math.abs(mark.endX - mark.startX) : Math.max(mark.width || 200, 40);
+                    const h = mark.type === 'circle' ? Math.abs(mark.endY - mark.startY) : Math.max(mark.height || 40, 30);
+                    const corners = [
+                        { x: left, y: top },
+                        { x: left + w, y: top },
+                        { x: left, y: top + h },
+                        { x: left + w, y: top + h },
+                    ];
+                    for (const c of corners) {
+                        ctx.fillRect(c.x - handleSize/2, c.y - handleSize/2, handleSize, handleSize);
+                        ctx.strokeRect(c.x - handleSize/2, c.y - handleSize/2, handleSize, handleSize);
+                    }
+                } else if (mark.type === 'underline') {
+                    const points = [
+                        { x: mark.startX, y: mark.startY },
+                        { x: mark.endX, y: mark.endY }
+                    ];
+                    for (const p of points) {
+                        ctx.fillRect(p.x - handleSize/2, p.y - handleSize/2, handleSize, handleSize);
+                        ctx.strokeRect(p.x - handleSize/2, p.y - handleSize/2, handleSize, handleSize);
+                    }
+                }
+                ctx.restore();
+            }
+
+            getResizeHandleForMark(mark, x, y) {
+                const withinSquare = (cx, cy, size) => Math.abs(x - cx) <= size/2 && Math.abs(y - cy) <= size/2;
+                const handleSize = 10;
+                if (mark.type === 'circle' || mark.type === 'text') {
+                    const left = mark.type === 'circle' ? Math.min(mark.startX, mark.endX) : mark.x;
+                    const top = mark.type === 'circle' ? Math.min(mark.startY, mark.endY) : mark.y;
+                    const w = mark.type === 'circle' ? Math.abs(mark.endX - mark.startX) : Math.max(mark.width || 200, 40);
+                    const h = mark.type === 'circle' ? Math.abs(mark.endY - mark.startY) : Math.max(mark.height || 40, 30);
+                    const corners = [
+                        { name: 'nw', x: left, y: top },
+                        { name: 'ne', x: left + w, y: top },
+                        { name: 'sw', x: left, y: top + h },
+                        { name: 'se', x: left + w, y: top + h },
+                    ];
+                    for (const c of corners) {
+                        if (withinSquare(c.x, c.y, handleSize)) return c.name;
+                    }
+                    return null;
+                } else if (mark.type === 'underline') {
+                    if (this.dist({x, y}, {x: mark.startX, y: mark.startY}) <= handleSize) return 'start';
+                    if (this.dist({x, y}, {x: mark.endX, y: mark.endY}) <= handleSize) return 'end';
+                    return null;
+                }
+                return null;
+            }
+
+            resizeMarkWithHandle(mark, handle, x, y) {
+                if (mark.type === 'text') {
+                    const minW = 40, minH = 30;
+                    let left = mark.x, top = mark.y, right = mark.x + (mark.width || 200), bottom = mark.y + (mark.height || 40);
+                    if (handle.includes('n')) top = Math.min(y, bottom - minH);
+                    if (handle.includes('s')) bottom = Math.max(y, top + minH);
+                    if (handle.includes('w')) left = Math.min(x, right - minW);
+                    if (handle.includes('e')) right = Math.max(x, left + minW);
+                    mark.x = left;
+                    mark.y = top;
+                    mark.width = right - left;
+                    mark.height = bottom - top;
+                } else if (mark.type === 'circle') {
+                    let left = Math.min(mark.startX, mark.endX);
+                    let right = Math.max(mark.startX, mark.endX);
+                    let top = Math.min(mark.startY, mark.endY);
+                    let bottom = Math.max(mark.startY, mark.endY);
+                    const minW = 10, minH = 10;
+                    if (handle.includes('n')) top = Math.min(y, bottom - minH);
+                    if (handle.includes('s')) bottom = Math.max(y, top + minH);
+                    if (handle.includes('w')) left = Math.min(x, right - minW);
+                    if (handle.includes('e')) right = Math.max(x, left + minW);
+                    // Reassign start/end preserving orientation
+                    mark.startX = left;  mark.startY = top;
+                    mark.endX = right;   mark.endY = bottom;
+                } else if (mark.type === 'underline') {
+                    if (handle === 'start') {
+                        mark.startX = x; mark.startY = y;
+                    } else if (handle === 'end') {
+                        mark.endX = x; mark.endY = y;
+                    }
+                }
+            }
+
+            wrapTextLines(ctx, text, maxWidth) {
+                const words = (text || '').split(/\s+/);
+                const lines = [];
+                let current = '';
+                for (let i = 0; i < words.length; i++) {
+                    const test = current ? current + ' ' + words[i] : words[i];
+                    const w = ctx.measureText(test).width;
+                    if (w <= maxWidth) {
+                        current = test;
+                    } else {
+                        if (current) lines.push(current);
+                        // If single word longer than maxWidth, hard-break
+                        if (ctx.measureText(words[i]).width > maxWidth) {
+                            let fragment = '';
+                            for (const ch of words[i]) {
+                                const tryFrag = fragment + ch;
+                                if (ctx.measureText(tryFrag).width <= maxWidth) {
+                                    fragment = tryFrag;
+                                } else {
+                                    if (fragment) lines.push(fragment);
+                                    fragment = ch;
+                                }
+                            }
+                            current = fragment;
+                        } else {
+                            current = words[i];
+                        }
+                    }
+                }
+                if (current) lines.push(current);
+                return lines;
+            }
+
+            resetShadow(ctx) {
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+            }
+
+            setupEventListeners() {
+                // Zoom in button
+                document.getElementById('zoomIn').addEventListener('click', () => {
+                    if (this.currentZoom < this.maxZoom) {
+                        this.currentZoom = Math.min(this.maxZoom, this.currentZoom + this.zoomStep);
+                        this.updateCanvasSize();
+                    }
+                });
+                
+                // Zoom out button
+                document.getElementById('zoomOut').addEventListener('click', () => {
+                    if (this.currentZoom > this.minZoom) {
+                        this.currentZoom = Math.max(this.minZoom, this.currentZoom - this.zoomStep);
+                        this.updateCanvasSize();
+                    }
+                });
+                
+                // Print button (if present)
+                const printBtn = document.getElementById('printBtn');
+                if (printBtn) {
+                    printBtn.addEventListener('click', () => this.printAnnotations());
+                }
+
+                // Undo/Redo
+                document.getElementById('undoBtn').addEventListener('click', () => this.undo());
+                document.getElementById('redoBtn').addEventListener('click', () => this.redo());
+
+                // Save/Load
+                document.getElementById('saveBtn').addEventListener('click', () => this.saveAnnotations());
+                document.getElementById('loadBtn').addEventListener('click', () => this.loadAnnotations());
+
+                // Export
+                document.getElementById('exportImagesBtn').addEventListener('click', () => this.exportImages());
+                document.getElementById('exportPdfBtn').addEventListener('click', () => this.exportPdf());
+
+                // Context menu item selection
+                document.querySelectorAll('.menu-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const tool = item.dataset.tool;
+                        this.handleToolSelection(tool);
+                        this.hideContextMenu();
+                    });
+                });
+            }
+
+            handleToolSelection(tool) {
+                if (!this.pendingAnnotation) return;
+                
+                const { pageIndex, x, y } = this.pendingAnnotation;
+                
+                if (tool === 'text') {
+                    this.openTextEditor({ pageIndex, x, y, editingIndex: null, initialText: '' });
+                    this.pendingAnnotation = null;
+                } else if (tool === 'circle' || tool === 'underline' || tool === 'line') {
+                    // Set selected tool for drag mode
+                    this.selectedTool = (tool === 'line') ? 'underline' : tool;
+                    this.pendingAnnotation = null;
+                    
+                    // Change cursor to indicate drag mode
+                    const canvases = document.querySelectorAll('.page canvas');
+                    canvases.forEach(canvas => {
+                        canvas.style.cursor = 'crosshair';
+                    });
+                } else {
+                    // For tick and cross marks
+                    this.addMark(pageIndex, x, y, tool);
+                    this.pendingAnnotation = null;
+                }
+            }
+
+            handleCanvasDoubleClick(e, pageIndex) {
+                const rect = e.target.getBoundingClientRect();
+                const mouseX = (e.clientX - rect.left) * (e.target.width / rect.width);
+                const mouseY = (e.clientY - rect.top) * (e.target.height / rect.height);
+                const idx = this.findAnnotationAtPosition(pageIndex, mouseX, mouseY, { includeHandles: true });
+                if (idx !== null) {
+                    // Remove immediately and redraw
+                    this.pages[pageIndex].marks.splice(idx, 1);
+                    this.hoveredAnnotation = null;
+                    this.selectedAnnotationIndex = null;
+                    this.redrawCanvas(pageIndex);
+                }
+            }
+
+            openTextEditor({ pageIndex, x, y, width = 220, height = 90, editingIndex = null, initialText = '' }) {
+                const page = this.pages[pageIndex];
+                const canvas = page.canvas;
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = rect.width / canvas.width;
+                const scaleY = rect.height / canvas.height;
+
+                const editor = document.createElement('textarea');
+                editor.className = 'text-editor';
+                editor.value = initialText;
+                editor.style.left = `${rect.left + x * scaleX}px`;
+                editor.style.top = `${rect.top + y * scaleY}px`;
+                editor.style.width = `${width * scaleX}px`;
+                editor.style.height = `${height * scaleY}px`;
+
+                document.body.appendChild(editor);
+                editor.focus();
+
+                const finalize = (shouldSave) => {
+                    if (!this.activeTextEditor) return;
+                    const r = canvas.getBoundingClientRect();
+                    const sx = r.width / canvas.width;
+                    const sy = r.height / canvas.height;
+                    const left = parseFloat(editor.style.left);
+                    const top = parseFloat(editor.style.top);
+                    const w = editor.offsetWidth;
+                    const h = editor.offsetHeight;
+                    const xCanvas = (left - r.left) / sx;
+                    const yCanvas = (top - r.top) / sy;
+                    const wCanvas = w / sx;
+                    const hCanvas = h / sy;
+
+                    if (shouldSave) {
+                        const text = editor.value.trim();
+                        if (text) {
+                            if (editingIndex === null) {
+                                this.addMark(pageIndex, xCanvas, yCanvas, 'text', { text, width: wCanvas, height: hCanvas });
+                            } else {
+                                const mark = this.pages[pageIndex].marks[editingIndex];
+                                mark.x = xCanvas;
+                                mark.y = yCanvas;
+                                mark.width = wCanvas;
+                                mark.height = hCanvas;
+                                mark.text = text;
+                                this.redrawCanvas(pageIndex);
+                            }
+                        }
+                    }
+                    editor.remove();
+                    this.activeTextEditor = null;
+                };
+
+                const onKeyDown = (ev) => {
+                    if (ev.key === 'Escape') {
+                        ev.preventDefault();
+                        finalize(false);
+                    } else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'enter') {
+                        ev.preventDefault();
+                        finalize(true);
+                    }
+                };
+                const onBlur = () => finalize(true);
+
+                editor.addEventListener('keydown', onKeyDown);
+                editor.addEventListener('blur', onBlur, { once: true });
+
+                this.activeTextEditor = {
+                    pageIndex,
+                    element: editor,
+                    x,
+                    y,
+                    width,
+                    height,
+                    editingIndex,
+                    onKeyDown
+                };
+            }
+
+            updateCanvasSize() {
+                const scale = this.currentZoom / 100;
+                
+                this.pages.forEach((page, index) => {
+                    const canvas = page.canvas;
+                    const newWidth = this.baseCanvasWidth * scale;
+                    const newHeight = this.baseCanvasHeight * scale;
+                    
+                    // Update canvas display size
+                    canvas.style.width = `${newWidth}px`;
+                    canvas.style.height = `${newHeight}px`;
+                    
+                    // Update zoom info display
+                    const zoomInfo = canvas.parentElement.querySelector('.zoom-info');
+                    zoomInfo.textContent = `${this.currentZoom}%`;
+
+                    // Reposition active text editor if it belongs to this page
+                    if (this.activeTextEditor && this.activeTextEditor.pageIndex === index) {
+                        const rect = canvas.getBoundingClientRect();
+                        const scaleX = rect.width / canvas.width;
+                        const scaleY = rect.height / canvas.height;
+                        const ed = this.activeTextEditor;
+                        ed.element.style.left = `${rect.left + ed.x * scaleX}px`;
+                        ed.element.style.top = `${rect.top + ed.y * scaleY}px`;
+                        ed.element.style.width = `${ed.width * scaleX}px`;
+                        ed.element.style.height = `${ed.height * scaleY}px`;
+                    }
+                });
+            }
+
+            printAnnotations() {
+                const annotations = {
+                    pages: []
+                };
+                
+                this.pages.forEach((page, index) => {
+                    const pageData = {
+                        pageNumber: index + 1,
+                        tickMarks: [],
+                        crossMarks: [],
+                        circles: [],
+                        underlines: [],
+                        textAnnotations: []
+                    };
+                    
+                    page.marks.forEach(mark => {
+                        if (mark.type === 'tick') {
+                            pageData.tickMarks.push({
+                                x: Math.round(mark.x),
+                                y: Math.round(mark.y)
+                            });
+                        } else if (mark.type === 'cross') {
+                            pageData.crossMarks.push({
+                                x: Math.round(mark.x),
+                                y: Math.round(mark.y)
+                            });
+                        } else if (mark.type === 'circle') {
+                            pageData.circles.push({
+                                startX: Math.round(mark.startX),
+                                startY: Math.round(mark.startY),
+                                endX: Math.round(mark.endX),
+                                endY: Math.round(mark.endY)
+                            });
+                        } else if (mark.type === 'underline') {
+                            pageData.underlines.push({
+                                startX: Math.round(mark.startX),
+                                startY: Math.round(mark.startY),
+                                endX: Math.round(mark.endX),
+                                endY: Math.round(mark.endY)
+                            });
+                        } else if (mark.type === 'text') {
+                            pageData.textAnnotations.push({
+                                x: Math.round(mark.x),
+                                y: Math.round(mark.y),
+                                width: Math.round(mark.width || 0),
+                                height: Math.round(mark.height || 0),
+                                text: mark.text
+                            });
+                        }
+                    });
+                    
+                    annotations.pages.push(pageData);
+                });
+                
+                console.log('Document Annotations:', JSON.stringify(annotations, null, 2));
+            }
+
+            // Save annotations as JSON (downloads a file)
+            saveAnnotations() {
+                const data = {
+                    version: 1,
+                    pages: this.pages.map((p, idx) => ({
+                        pageNumber: idx + 1,
+                        marks: p.marks.map(m => ({ ...m }))
+                    }))
+                };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'annotations.json';
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            // Load annotations from a JSON file selected by the user
+            loadAnnotations() {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'application/json';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        try {
+                            const data = JSON.parse(reader.result);
+                            if (!data || !Array.isArray(data.pages)) return;
+                            this.history = [];
+                            this.future = [];
+                            data.pages.forEach((pg, i) => {
+                                if (!this.pages[i]) return;
+                                this.pages[i].marks = (pg.marks || []).map(m => ({ ...m }));
+                                this.redrawCanvas(i);
+                            });
+                        } catch (err) {
+                            console.error('Failed to load annotations:', err);
+                        }
+                    };
+                    reader.readAsText(file);
+                };
+                input.click();
+            }
+
+            // Export each page as an image (PNG) with annotations drawn
+            exportImages() {
+                this.pages.forEach((page, i) => {
+                    const dataUrl = page.canvas.toDataURL('image/png');
+                    const a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = `page-${i + 1}.png`;
+                    a.click();
+                });
+            }
+
+            // Export all pages into a simple PDF (portrait) using canvas images
+            exportPdf() {
+                try {
+                    const w = 595; // A4 width @ 72dpi
+                    const h = 842; // A4 height @ 72dpi
+                    const pdfWindow = window.open('', '_blank');
+                    if (!pdfWindow) {
+                        alert('Popup blocked. Please allow popups to export PDF.');
+                        return;
+                    }
+                    const doc = pdfWindow.document;
+                    doc.write('<html><head><title>Export PDF</title></head><body style="margin:0">');
+                    this.pages.forEach((page, i) => {
+                        const img = page.canvas.toDataURL('image/png');
+                        doc.write(`<div style="page-break-after: always; width:${w}px; height:${h}px; display:flex; align-items:center; justify-content:center;">`);
+                        doc.write(`<img src="${img}" style="max-width:100%; max-height:100%;"/>`);
+                        doc.write('</div>');
+                    });
+                    doc.write('</body></html>');
+                    doc.close();
+                    pdfWindow.print();
+                } catch (e) {
+                    console.error('Export PDF failed:', e);
+                }
+            }
+        }
+
+        // Global variable to store the annotation tool instance
+        let annotationTool;
+
+        // Initialize the application when the DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            // Create with default 4 pages (can be changed dynamically)
+            annotationTool = new DocumentAnnotationTool(4);
+            
+            // Examples of how to use with different page counts:
+            // annotationTool = new DocumentAnnotationTool(1);   // Single page
+            // annotationTool = new DocumentAnnotationTool(10);  // Ten pages
+            // annotationTool.setNumberOfPages(8);               // Change to 8 pages dynamically
+        });
+    </script>
